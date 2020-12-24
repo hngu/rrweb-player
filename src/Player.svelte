@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount, onDestroy } from 'svelte';
-  import { Replayer, unpack } from 'rrweb';
-  import type { eventWithTime } from 'rrweb/typings/types';
+  import { Replayer, unpack, mirror } from 'rrweb';
+  import type { eventWithTime, playerConfig } from 'rrweb/typings/types';
   import {
     inlineCss,
     openFullscreen,
@@ -17,21 +17,25 @@
   export let events: eventWithTime[] = [];
   export let skipInactive: boolean = true;
   export let autoPlay: boolean = true;
-  export let triggerFocus: boolean = true;
   export let speedOption: number[] = [1, 2, 4, 8];
+  export let speed: number = 1;
   export let showController: boolean = true;
-  export let showWarning: boolean = true;
-  export let showDebug: boolean = true;
   export let tags: Record<string, string> = {};
 
+  export const getMirror = () => mirror;
+
   const controllerHeight = 80;
-  let speed = 1;
   let player: HTMLElement;
   let frame: HTMLElement;
   let replayer: Replayer;
   let fullscreenListener: undefined | (() => void);
   let _width: number = width;
   let _height: number = height;
+  let controller: {
+    toggle: () => void;
+    setSpeed: (speed: number) => void;
+    toggleSkipInactive: () => void;
+  } & Controller;
 
   let style: string;
   $: style = inlineCss({
@@ -51,21 +55,62 @@
     const widthScale = width / frameDimension.width;
     const heightScale = height / frameDimension.height;
     el.style.transform =
-      `scale(${Math.min(widthScale, heightScale)})` + 'translate(-50%, -50%)';
+      `scale(${Math.min(widthScale, heightScale, 1)})` +
+      'translate(-50%, -50%)';
   };
 
-  const fullscreen = () => {
+  export const triggerResize = () => {
+    updateScale(replayer.wrapper, {
+      width: replayer.iframe.offsetWidth,
+      height: replayer.iframe.offsetHeight,
+    });
+  };
+
+  export const toggleFullscreen = () => {
     if (player) {
       isFullscreen() ? exitFullscreen() : openFullscreen(player);
     }
   };
 
-  export const addEventListener = (event: string, handler: () => unknown) => {
+  export const addEventListener = (
+    event: string,
+    handler: (detail: unknown) => unknown,
+  ) => {
     replayer.on(event, handler);
+    switch (event) {
+      case 'ui-update-current-time':
+      case 'ui-update-progress':
+      case 'ui-update-player-state':
+        controller.$on(event, ({ detail }) => handler(detail));
+      default:
+        break;
+    }
   };
 
   export const addEvent = (event: eventWithTime) => {
     replayer.addEvent(event);
+  };
+  export const getMetaData = () => replayer.getMetaData();
+  export const getReplayer = () => replayer;
+
+  // by pass controller methods as public API
+  export const toggle = () => {
+    controller.toggle();
+  };
+  export const setSpeed = (speed: number) => {
+    controller.setSpeed(speed);
+  };
+  export const toggleSkipInactive = () => {
+    controller.toggleSkipInactive();
+  };
+  export const play = () => {
+    controller.play();
+  };
+  export const pause = () => {
+    controller.pause();
+  };
+  export const goto = (timeOffset: number) => {
+    controller.goto(timeOffset);
   };
 
   onMount(() => {
@@ -93,11 +138,8 @@
     replayer = new Replayer(events, {
       speed,
       root: frame,
-      skipInactive,
-      showWarning,
-      showDebug,
-      triggerFocus,
       unpackFn: unpack,
+      ...$$props,
     });
 
     replayer.on('resize', (dimension) => {
@@ -150,7 +192,7 @@
     overflow: hidden;
   }
 
-  :global(.replayer-wrapper) {
+  .replayer-wrapper {
     float: left;
     clear: both;
     transform-origin: top left;
@@ -158,7 +200,7 @@
     top: 50%;
   }
 
-  :global(.replayer-wrapper > iframe) {
+  .replayer-wrapper > iframe {
     border: none;
   }
 </style>
@@ -167,12 +209,13 @@
   <div class="rr-player__frame" bind:this={frame} {style} />
   {#if replayer}
     <Controller
+      bind:this={controller}
       {replayer}
       {showController}
       {autoPlay}
       {speedOption}
       {skipInactive}
       {tags}
-      on:fullscreen={() => fullscreen()} />
+      on:fullscreen={() => toggleFullscreen()} />
   {/if}
 </div>

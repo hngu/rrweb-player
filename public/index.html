@@ -23,9 +23,14 @@
         skipInactive: true,
         showDebug: false,
         showWarning: false,
-        autoPlay: false,
+        autoPlay: true,
+        mouseTail: {
+          strokeStyle: 'yellow',
+        },
       },
     });
+    window.$c = component;
     component.addEventListener('finish', () => console.log('finish'));
+    // component.addEventListener('ui-update-progress', console.log);
   </script>
 </html>

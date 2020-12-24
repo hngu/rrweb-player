@@ -26,8 +26,14 @@
   export let tags: Record<string, string> = {};
 
   let currentTime = 0;
+  $: {
+    dispatch('ui-update-current-time', { payload: currentTime });
+  }
   let timer: number | null = null;
   let playerState: 'playing' | 'paused' | 'live';
+  $: {
+    dispatch('ui-update-player-state', { payload: playerState });
+  }
   let speedState: 'normal' | 'skipping';
   let progress: HTMLElement;
   let step: HTMLElement;
@@ -39,6 +45,7 @@
   $: {
     const percent = Math.min(1, currentTime / meta.totalTime);
     percentage = `${100 * percent}%`;
+    dispatch('ui-update-progress', { payload: percent });
   }
   type CustomEvent = {
     name: string;
@@ -85,7 +92,7 @@
     stopTimer();
 
     function update() {
-      currentTime = replayer.timer.timeOffset + replayer.getTimeOffset();
+      currentTime = replayer.getCurrentTime();
 
       if (currentTime < meta.totalTime) {
         timer = requestAnimationFrame(update);
@@ -102,21 +109,45 @@
     }
   };
 
-  const toggle = () => {
+  export const toggle = () => {
     switch (playerState) {
       case 'playing':
-        replayer.pause();
+        pause();
         break;
       case 'paused':
-        if (finished) {
-          replayer.play();
-          finished = false;
-        } else {
-          replayer.play(currentTime);
-        }
+        play();
         break;
       default:
         break;
+    }
+  };
+
+  export const play = () => {
+    if (playerState !== 'paused') {
+      return;
+    }
+    if (finished) {
+      replayer.play();
+      finished = false;
+    } else {
+      replayer.play(currentTime);
+    }
+  };
+
+  export const pause = () => {
+    if (playerState !== 'playing') {
+      return;
+    }
+    replayer.pause();
+  };
+
+  export const goto = (timeOffset: number) => {
+    currentTime = timeOffset;
+    const isPlaying = playerState === 'playing';
+    replayer.pause();
+    replayer.play(timeOffset);
+    if (!isPlaying) {
+      replayer.pause();
     }
   };
 
@@ -133,16 +164,10 @@
       percent = 1;
     }
     const timeOffset = meta.totalTime * percent;
-    currentTime = timeOffset;
-    const isPlaying = playerState === 'playing';
-    replayer.pause();
-    replayer.play(timeOffset);
-    if (!isPlaying) {
-      replayer.pause();
-    }
+    goto(timeOffset);
   };
 
-  const setSpeed = (newSpeed: number) => {
+  export const setSpeed = (newSpeed: number) => {
     let needFreeze = playerState === 'playing';
     speed = newSpeed;
     if (needFreeze) {
@@ -152,6 +177,10 @@
     if (needFreeze) {
       replayer.play(currentTime);
     }
+  };
+
+  export const toggleSkipInactive = () => {
+    skipInactive = !skipInactive;
   };
 
   onMount(() => {
@@ -320,7 +349,7 @@
     </div>
     <div class="rr-controller__btns">
       <button on:click={toggle}>
-        {#if ['playing', 'skipping'].includes(playerState)}
+        {#if playerState === 'playing'}
           <svg
             class="icon"
             viewBox="0 0 1024 1024"
